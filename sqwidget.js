@@ -521,7 +521,7 @@ var Sqwidget;
          */
         settings: { // TODO: Some props (e.g. "lightbox") would be better as props on Sqwidget.prototype, so they can be modified as instance properties. Perhaps we need global settings and instance settings.
             jQuery: {
-                minVersion: "1.4.2", // minimum version of jQuery to allow, if already in DOM
+                minVersion: "1.7.0", // minimum version of jQuery to allow, if already in DOM
                 src: "//ajax.googleapis.com/ajax/libs/jquery/1.8.2/jquery.min.js",
                 // Set noConflict properties to true to avoid global "$" and/or "jQuery" variables in the global namespace. If "$" is false, then "jQuery" is assumed to be false.
                 noConflict: {
@@ -531,7 +531,7 @@ var Sqwidget;
             },
             development: false,
             experimental: false,
-            automatic: true,
+            automatic: false,
             charset: "utf-8",
             basePath: "",
             pluginPath: "plugins/"
@@ -816,7 +816,7 @@ var Sqwidget;
          * similar.
          * @return {SqwidgetTemplate} the template
          */
-        getTemplate: function (templateFilename, widget) {
+        getTemplate: function (templateFilename) {
             // check to see if already loaded, if so, return instance.
             var filename = jQuery.trim(templateFilename),
                 fullName, t;
@@ -830,10 +830,16 @@ var Sqwidget;
             }
             t = this.widgetTemplates[fullName];
             if (!t) {
-                t = Template(this, fullName, widget);
+                t = Template(this, fullName);
                 this.widgetTemplates[fullName] = t;
+            } else {
             }
             return t;
+        },
+
+        addTemplate: function(args) {
+            var t = Template(this, args.fullName, null, args.template);
+            this.widgetTemplates[args.fullName] = t;
         },
         
         /**
@@ -1249,7 +1255,7 @@ var Sqwidget;
      * @return a SqwigetTemplate object
         */
     
-    Template = function (s, t, widget) {
+    Template = function (s, t, widget, template_content) {
         var self = {}, //neoclassical
             sqwidget = s,
             templateType = t,
@@ -1403,11 +1409,34 @@ var Sqwidget;
             _("template type is " + type);
             sqwidget.widgetTemplatesByType[type] = self;
             templateConfig.type = type;
+
+            var run_template = function(data) {
+                _("template loaded");                
+                templateText = data;
+                parseTemplateFile(templateText);
+                _("templates: " + props(templates));
+                loaded = true;
+                if (errors.length === 0) {
+                    // run controllers to set up dependencies via template.config, and
+                    // then resolve and load dependencies
+                    initWidgets();
+                    //runControllers();
+                    if (errors.length !== 0) {
+                        showErrorsInWidgets();
+                    }
+                }
+                else {
+                    showErrorsInWidgets();
+                }
+            }
             
             
             //path to the base 
             // TODO: allow .js?queryParameters=true etc.
-            if (templateType.lastIndexOf(".js") === templateType.length - 3) {
+            if (template_content) {
+                run_template(template_content);
+            } 
+            else if (templateType.lastIndexOf(".js") === templateType.length - 3) {
                 Sqwidget.getScript(templateType); // this will call the Sqwidget.templateText method
             }
             else {
@@ -1419,25 +1448,10 @@ var Sqwidget;
                     if (data.length === 0 || textStatus !== "success") {
                         // template load failed
                         errors.push("loading of template " + templateType + " failed.");
-                    }
-                    else {
-                        _("template loaded");                
-                        templateText = data;
-                        parseTemplateFile(templateText);
-                        _("templates: " + props(templates));
-                        loaded = true;
-                    }
-                    if (errors.length === 0) {
-                        // run controllers to set up dependencies via template.config, and
-                        // then resolve and load dependencies
-                        initWidgets();
-                        //runControllers();
-                        if (errors.length !== 0) {
-                            showErrorsInWidgets();
-                        }
-                    }
-                    else {
                         showErrorsInWidgets();
+                    } 
+                    else {
+                        run_template(data);
                     }
                 }, "text");
             }
@@ -1589,7 +1603,12 @@ var Sqwidget;
          * Check we have all plugins namespaced, er how do we know
          */
         function allPluginsLoaded() {
-            return (dependenciesRequested && sqwidget.checkDependencies(widget));
+            _('allPluginsLoaded', dependenciesRequested);
+            if (dependenciesRequested) {
+                return sqwidget.checkDependencies(widget);
+            }
+
+            return true;
         }
         
         function props(a) {
@@ -1665,6 +1684,7 @@ var Sqwidget;
             _("widget.checkRun", widget);
         
             if (allPluginsLoaded()) {
+                _('readyRun', readyRun);
                 if (!readyRun) {
                     readyRun = true;
                     if (readyFn) {
@@ -1677,10 +1697,13 @@ var Sqwidget;
                     }
                     else {
                         //TODO decide what extra contents will be displayed here
+                        _("setting default template");
                         widget.setTemplate("default", {}, null);
                     }
                 }
-            }            
+            } else {
+                _('plugins not loaded');
+            }
         };
         
         /**
@@ -1771,6 +1794,8 @@ var Sqwidget;
             _("  registering widget");
             sqTemplate.register(widget);
             _("   widget registered");            
+            widget.onTemplateLoaded(sqTemplate);
+            _("   template code loaded");
         };
                 
         /**
